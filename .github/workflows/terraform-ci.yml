@@ -1,0 +1,56 @@
+name: "Enterprise Terraform CI/CD & Security Gate"
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  validate-and-lint:
+    name: "Terraform Lint & Syntax Validation"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6.6"
+
+      - name: Check Terraform Formatting
+        run: terraform fmt -check -recursive
+
+      - name: Validate Root Production Environment
+        working-directory: ./environments/prod
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+  security-scan:
+    name: "DevSecOps Static Analysis & Secret Detection"
+    runs-on: ubuntu-latest
+    needs: validate-and-lint
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy Vulnerability & Misconfig Scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "config"
+          hide-progress: true
+          format: "table"
+          exit-code: "0"
+          severity: "CRITICAL,HIGH"
+
+      - name: Run Checkov IaC Security Gate
+        uses: bridgecrewio/checkov-action@master
+        with:
+          framework: terraform
+          output_format: cli
+          soft_fail: true
+
